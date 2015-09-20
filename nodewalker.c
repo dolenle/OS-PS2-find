@@ -1,3 +1,10 @@
+/*
+	ECE357 Operating Systems
+	Dolen Le
+	PS 2 Filesystem Exploration
+	Prof. Hakner
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +23,7 @@ extern int optind, opterr, optopt;
 
 const char *permText[] = {"---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"};
 
+char timeString[23];
 char *user = NULL;
 int userid = -1;
 unsigned int mtime = 0;
@@ -63,7 +71,7 @@ int main(int argc, char *argv[]) {
 	}
 	//printf("user=%s\n",user);
 	if(argc - optind == 1) {
-		recursiveWalk(argv[optind]); //begin a start path
+		recursiveWalk(argv[optind]); //begin at start path
 	} else {
 		fprintf(stderr, "Inccorect number of arguments\n");
 		fprintf(stderr, "Usage: %s [-u username | uid] [-m modify_time] starting_path\n", argv[0]);
@@ -74,6 +82,7 @@ int main(int argc, char *argv[]) {
 }
 
 int recursiveWalk(char *path) {
+	//printf("recursiveWalk called on %s\n", path);
 	struct dirent *entry;
 	struct stat *info = malloc(sizeof(struct stat));
 
@@ -81,13 +90,16 @@ int recursiveWalk(char *path) {
 	
 	if(!dir) {
 		perror("Could not open directory");
+		printf("Path: %s\n", path);
 		exit(-1);
 	}
 
-	while(entry = readdir(dir)) {
-		//printf("%s ",entry->d_name);
+	while(entry = readdir(dir)) { //evaluate each entry in the directory
 		if(strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
-			if(!stat(entry->d_name, info)) {
+			char* pathname = malloc(strlen(entry->d_name) + strlen(path) + 2);
+			sprintf(pathname, "%s/%s", path, entry->d_name);
+
+			if(!stat(pathname, info)) {
 				if(userid == -1 || info->st_uid == userid) {
 					
 					printf("0x%04X/", info->st_dev); //device #
@@ -165,17 +177,26 @@ int recursiveWalk(char *path) {
 					}
 
 					//print modify time
-					char timeString[23];
 					strftime(timeString, sizeof(timeString), "%D %r", localtime(&(info->st_mtime)));
 					printf("%s\t", timeString);
+
+					printf("%s\n", pathname);
+				}
+
+				if(S_ISDIR(info->st_mode)) {
+					recursiveWalk(pathname);
 				}
 
 			} else {
-				perror("stat failure");
+				perror("Could not get inode info");
 				exit(-1);
 			}
-			printf("\t%s ",entry->d_name);
-			printf("\n");
 		}
+	}
+
+	free(info);
+	if(closedir(dir)) {
+		perror("Could not close directory");
+		exit(-1);
 	}
 }
