@@ -23,10 +23,13 @@ extern int optind, opterr, optopt;
 
 const char *permText[] = {"---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"};
 
+char *linkBuf = NULL;
+
 char timeString[23];
 char *user = NULL;
 int userid = -1;
-unsigned int mtime = 0;
+long mtime = 0;
+long now;
 DIR *startDir = NULL;
 
 int main(int argc, char *argv[]) {
@@ -58,9 +61,10 @@ int main(int argc, char *argv[]) {
 			break;
 		}
 		case 'm': {
-			if(sscanf(optarg, "%u", &mtime) == 0) {
+			if(sscanf(optarg, "%li", &mtime) == 0) {
 				fprintf(stderr, "Invalid modify time %s\n", optarg);
-			} 
+			}
+			break;
 		}
 		case '?':
 			fprintf(stderr, "Unrecognized option %c\n", optopt);
@@ -69,6 +73,7 @@ int main(int argc, char *argv[]) {
 		}
 						
 	}
+	now = time(NULL);
 	//printf("user=%s\n",user);
 	if(argc - optind == 1) {
 		recursiveWalk(argv[optind]); //begin at start path
@@ -82,7 +87,6 @@ int main(int argc, char *argv[]) {
 }
 
 int recursiveWalk(char *path) {
-	//printf("recursiveWalk called on %s\n", path);
 	struct dirent *entry;
 	struct stat *info = malloc(sizeof(struct stat));
 
@@ -99,35 +103,44 @@ int recursiveWalk(char *path) {
 			char* pathname = malloc(strlen(entry->d_name) + strlen(path) + 2);
 			sprintf(pathname, "%s/%s", path, entry->d_name);
 
-			if(!stat(pathname, info)) {
-				if(userid == -1 || info->st_uid == userid) {
+			if(!lstat(pathname, info)) {
+				if((userid == -1 || info->st_uid == userid) && (mtime == 0 ||
+					 (mtime > 0 && now-info->st_mtime > mtime) ||
+					 (mtime < 0 && info->st_mtime-now > mtime))) {
 					
 					printf("0x%04X/", info->st_dev); //device #
 					printf("%li\t", (long) info->st_ino); //inode #
 
 					char printSize = 1; //flag for size printing
 					switch(info->st_mode & S_IFMT) { //file type bits
-						case S_IFBLK:
+						case S_IFBLK: //block special file
 							printf("b");
 							printSize = 0;
 							break;
-						case S_IFCHR:
+						case S_IFCHR: //char special file
 							printf("c");
 							printSize = 0;
 							break;
-						case S_IFIFO:
+						case S_IFIFO: //FIFO
 							printf("p");
 							break;
-						case S_IFREG:
+						case S_IFREG: //regular file
 							printf("-");
 							break;
-						case S_IFDIR:
+						case S_IFDIR: //directory
 							printf("d");
 							break;
-						case S_IFLNK:
+						case S_IFLNK: //symlink
 							printf("l");
+							linkBuf = malloc(info->st_size+1);
+							if(readlink(pathname, linkBuf, info->st_size) == info->st_size) {
+								linkBuf[info->st_size] = 0;
+							} else {
+								perror("Could not read symlink");
+								exit(-1);
+							}
 							break;
-						case S_IFSOCK:
+						case S_IFSOCK: //socket
 							printf("s");
 							break;
 						default:
@@ -180,8 +193,16 @@ int recursiveWalk(char *path) {
 					strftime(timeString, sizeof(timeString), "%D %r", localtime(&(info->st_mtime)));
 					printf("%s\t", timeString);
 
-					printf("%s\n", pathname);
+					printf("%s", pathname);
+					if(linkBuf) {
+						printf(" -> %s\n", linkBuf);
+					} else {
+						printf("\n");
+					}
 				}
+
+				free(linkBuf);
+				linkBuf = NULL;
 
 				if(S_ISDIR(info->st_mode)) {
 					recursiveWalk(pathname);
@@ -191,6 +212,7 @@ int recursiveWalk(char *path) {
 				perror("Could not get inode info");
 				exit(-1);
 			}
+			free(pathname);
 		}
 	}
 
