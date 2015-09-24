@@ -77,18 +77,22 @@ int main(int argc, char *argv[]) {
 	//printf("user=%s\n",user);
 	if(argc - optind == 1) {
 		recursiveWalk(argv[optind]); //begin at start path
+		exit(0);
 	} else {
 		fprintf(stderr, "Inccorect number of arguments\n");
 		fprintf(stderr, "Usage: %s [-u username | uid] [-m modify_time] starting_path\n", argv[0]);
 		exit(-1);
 	}
-
 	
 }
 
 int recursiveWalk(char *path) {
 	struct dirent *entry;
-	struct stat *info = malloc(sizeof(struct stat));
+	struct stat *info;
+	if(!(info = malloc(sizeof(struct stat)))) {
+		fprintf(stderr, "Could not allocate memory.\n");
+		exit(-1);
+	}
 
 	DIR *dir = opendir(path);
 	
@@ -100,7 +104,11 @@ int recursiveWalk(char *path) {
 
 	while(entry = readdir(dir)) { //evaluate each entry in the directory
 		if(strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
-			char* pathname = malloc(strlen(entry->d_name) + strlen(path) + 2);
+			char* pathname;
+			if(!(pathname = malloc(strlen(entry->d_name) + strlen(path) + 2))) {
+				fprintf(stderr, "Could not allocate memory.\n");
+				exit(-1);
+			}
 			sprintf(pathname, "%s/%s", path, entry->d_name);
 
 			if(!lstat(pathname, info)) {
@@ -132,7 +140,10 @@ int recursiveWalk(char *path) {
 							break;
 						case S_IFLNK: //symlink
 							printf("l");
-							linkBuf = malloc(info->st_size+1);
+							if(!(linkBuf = malloc(info->st_size+1))) {
+								fprintf(stderr, "Could not allocate memory.\n");
+								exit(-1);
+							}
 							if(readlink(pathname, linkBuf, info->st_size) == info->st_size) {
 								linkBuf[info->st_size] = 0;
 							} else {
@@ -143,9 +154,9 @@ int recursiveWalk(char *path) {
 						case S_IFSOCK: //socket
 							printf("s");
 							break;
-						default:
-							fprintf(stderr, "Invalid file type.\n");
-							exit(-1);
+						default: //print it as a number
+							printf("%d", (info->st_mode >> 12) & 0x0F);
+							break;
 					}
 
 					//print permission bits
@@ -160,8 +171,9 @@ int recursiveWalk(char *path) {
 							} else {
 								temp[2] = 'S';
 							}
-							if(i == 0) //for group permissions sticky bit
+							if(i == 0) { //for group permissions sticky bit
 								temp[2]++;
+							}
 						}
 						printf("%s", temp);
 						free(temp);
